@@ -1,14 +1,15 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 
 interface User {
-  id: string;
   name: string;
 }
 
 interface AuthContextType {
   user: User | null;
   loading: boolean;
-  login: (name: string) => void;
+  isFirstVisit: boolean;
+  createAccount: (name: string, password: string) => void;
+  login: (password: string) => Promise<boolean>;
   logout: () => void;
 }
 
@@ -17,34 +18,53 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
+  const [isFirstVisit, setIsFirstVisit] = useState(false);
 
   useEffect(() => {
-    const saved = localStorage.getItem('ez_user');
-    if (saved) {
-      try {
-        setUser(JSON.parse(saved));
-      } catch (e) {
-        console.error("Failed to parse saved user", e);
-        localStorage.removeItem('ez_user');
-      }
+    const accountData = localStorage.getItem('ez_account');
+    const sessionAuth = sessionStorage.getItem('ez_session_auth');
+
+    if (!accountData) {
+      setIsFirstVisit(true);
+    } else if (sessionAuth === 'true') {
+      const parsed = JSON.parse(accountData);
+      setUser({ name: parsed.name });
     }
+    
     setLoading(false);
   }, []);
 
-  const login = (name: string) => {
-    // We use the name as the ID for "EZ" mode - this acts as a namespace
-    const newUser = { id: name.toLowerCase().trim(), name };
-    setUser(newUser);
-    localStorage.setItem('ez_user', JSON.stringify(newUser));
+  const createAccount = (name: string, password: string) => {
+    const account = {
+      name,
+      passwordHash: btoa(password)
+    };
+    localStorage.setItem('ez_account', JSON.stringify(account));
+    setIsFirstVisit(false);
+    setUser({ name });
+    sessionStorage.setItem('ez_session_auth', 'true');
+  };
+
+  const login = async (password: string): Promise<boolean> => {
+    const accountData = localStorage.getItem('ez_account');
+    if (!accountData) return false;
+    
+    const account = JSON.parse(accountData);
+    if (account.passwordHash === btoa(password)) {
+      setUser({ name: account.name });
+      sessionStorage.setItem('ez_session_auth', 'true');
+      return true;
+    }
+    return false;
   };
 
   const logout = () => {
     setUser(null);
-    localStorage.removeItem('ez_user');
+    sessionStorage.clear();
   };
 
   return (
-    <AuthContext.Provider value={{ user, loading, login, logout }}>
+    <AuthContext.Provider value={{ user, loading, isFirstVisit, createAccount, login, logout }}>
       {!loading && children}
     </AuthContext.Provider>
   );

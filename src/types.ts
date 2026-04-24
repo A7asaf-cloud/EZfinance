@@ -24,6 +24,8 @@ export interface Stock {
   avgBuyPrice: number;
   currentPrice: number;
   buyDate: string;
+  todayChange?: number;
+  todayChangePct?: number;
 }
 
 export type StockTransactionType = 'buy' | 'sell';

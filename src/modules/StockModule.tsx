@@ -1,368 +1,427 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useFinanceData } from '../hooks/useFinanceData';
 import { Card, Button } from '../components/UI';
-import { formatCurrency, cn, formatDate } from '../lib/utils';
-import { Plus, Trash2, TrendingUp, History, Briefcase, MinusCircle, ArrowRightCircle, RefreshCw, DollarSign } from 'lucide-react';
-import { ResponsiveContainer, PieChart as RePieChart, Pie, Cell, Tooltip } from 'recharts';
-import { COLORS } from '../types';
+import { formatCurrency, cn } from '../lib/utils';
+import { 
+  Plus, 
+  TrendingUp, 
+  RefreshCw, 
+  DollarSign, 
+  AlertTriangle,
+  ChevronUp,
+  ChevronDown,
+  X,
+  Clock
+} from 'lucide-react';
 import { useUI } from '../contexts/UIContext';
+import { Stock } from '../types';
 
-type StockView = 'portfolio' | 'history';
+type SortKey = 'symbol' | 'name' | 'shares' | 'avgBuyPrice' | 'currentPrice' | 'todayChange' | 'totalValue' | 'profitLoss';
+type SortOrder = 'asc' | 'desc';
 
 export default function StockModule() {
-  const { data, addStock, sellStock, refreshStockPrices } = useFinanceData();
-  const { t, language } = useUI();
-  const [activeTab, setActiveTab] = useState<StockView>('portfolio');
+  const { data, addStock, refreshStockPrices, sellStock } = useFinanceData();
+  const { language, t } = useUI();
   const [showAdd, setShowAdd] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
-  const [sellStockData, setSellStockData] = useState<{ symbol: string; shares: number; price: string } | null>(null);
-
+  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+  const [useCached, setUseCached] = useState(false);
+  
   const [formData, setFormData] = useState({
     symbol: '',
     name: '',
     shares: '',
     avgBuyPrice: '',
+    buyDate: new Date().toISOString().split('T')[0],
   });
 
-  const handleRefresh = async () => {
-    setIsRefreshing(true);
-    await refreshStockPrices();
-    setTimeout(() => setIsRefreshing(false), 1000);
-  };
+  const [sortConfig, setSortConfig] = useState<{ key: SortKey, order: SortOrder }>({ 
+    key: 'totalValue', 
+    order: 'desc' 
+  });
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const fetchPrices = useCallback(async () => {
+    if (data.stocks.length === 0) return;
+    setIsRefreshing(true);
+    setUseCached(false);
+    try {
+      await refreshStockPrices();
+      setLastUpdated(new Date());
+    } catch (error) {
+      console.error("Failed to fetch prices:", error);
+      setUseCached(true);
+    } finally {
+      setIsRefreshing(false);
+    }
+  }, [data.stocks.length, refreshStockPrices]);
+
+  useEffect(() => {
+    fetchPrices();
+    const interval = setInterval(fetchPrices, 60000); // Live refresh every 60s
+    return () => clearInterval(interval);
+  }, [fetchPrices]);
+
+  const handleAddSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!formData.symbol || !formData.shares) return;
+    if (!formData.symbol || !formData.shares || !formData.avgBuyPrice) return;
     
     addStock({
       symbol: formData.symbol.toUpperCase(),
       name: formData.name || formData.symbol.toUpperCase(),
       shares: parseFloat(formData.shares),
       avgBuyPrice: parseFloat(formData.avgBuyPrice),
+      // Set initial current price to buy price until next refresh
       currentPrice: parseFloat(formData.avgBuyPrice),
-      buyDate: new Date().toISOString()
+      buyDate: new Date(formData.buyDate).toISOString()
     });
     
-    setFormData({ symbol: '', name: '', shares: '', avgBuyPrice: '' });
+    setFormData({ 
+      symbol: '', 
+      name: '', 
+      shares: '', 
+      avgBuyPrice: '', 
+      buyDate: new Date().toISOString().split('T')[0] 
+    });
     setShowAdd(false);
+    // Trigger immediate refresh for the new symbol
+    fetchPrices();
   };
 
-  const handleSellSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!sellStockData || !sellStockData.price) return;
-    
-    sellStock(sellStockData.symbol, sellStockData.shares, parseFloat(sellStockData.price));
-    setSellStockData(null);
+  const stocksWithCalcs = useMemo(() => {
+    return data.stocks.map(s => {
+      const currentPrice = s.currentPrice || s.avgBuyPrice;
+      const totalValue = s.shares * currentPrice;
+      const costBasis = s.shares * s.avgBuyPrice;
+      const profitLoss = totalValue - costBasis;
+      const profitLossPct = costBasis !== 0 ? (profitLoss / costBasis) * 100 : 0;
+      
+      return {
+        ...s,
+        currentPrice,
+        totalValue,
+        costBasis,
+        profitLoss,
+        profitLossPct
+      };
+    });
+  }, [data.stocks]);
+
+  const sortedStocks = useMemo(() => {
+    const items = [...stocksWithCalcs];
+    return items.sort((a, b) => {
+      let valA: any = a[sortConfig.key];
+      let valB: any = b[sortConfig.key];
+      
+      // Handle cases where fields might be undefined (like todayChange)
+      if (valA === undefined) valA = -Infinity;
+      if (valB === undefined) valB = -Infinity;
+
+      if (valA < valB) return sortConfig.order === 'asc' ? -1 : 1;
+      if (valA > valB) return sortConfig.order === 'asc' ? 1 : -1;
+      return 0;
+    });
+  }, [stocksWithCalcs, sortConfig]);
+
+  const portfolioTotals = useMemo(() => {
+    return stocksWithCalcs.reduce((acc, s) => ({
+      totalValue: acc.totalValue + s.totalValue,
+      totalCostBasis: acc.totalCostBasis + s.costBasis,
+      totalProfitLoss: acc.totalProfitLoss + s.profitLoss
+    }), { totalValue: 0, totalCostBasis: 0, totalProfitLoss: 0 });
+  }, [stocksWithCalcs]);
+
+  const totalPLPct = portfolioTotals.totalCostBasis !== 0 
+    ? (portfolioTotals.totalProfitLoss / portfolioTotals.totalCostBasis) * 100 
+    : 0;
+
+  const handleSort = (key: SortKey) => {
+    setSortConfig(prev => ({
+      key,
+      order: prev.key === key && prev.order === 'desc' ? 'asc' : 'desc'
+    }));
   };
 
-  const totalValue = data.stocks.reduce((acc, s) => acc + (s.shares * s.currentPrice || 0), 0);
-  const totalGain = data.stocks.reduce((acc, s) => acc + (s.shares * ((s.currentPrice || 0) - s.avgBuyPrice)), 0);
-
-  const chartData = data.stocks.map(s => ({
-    name: s.symbol,
-    value: s.shares * (s.currentPrice || 0)
-  }));
-
-  const PIE_COLORS = ['#3b82f6', '#8b5cf6', '#ec4899', '#f59e0b', '#10b981', '#6366f1'];
+  const SortIcon = ({ ik }: { ik: SortKey }) => {
+    if (sortConfig.key !== ik) return <div className="w-3 h-3 opacity-20"><ChevronUp className="w-full h-full" /></div>;
+    return sortConfig.order === 'asc' ? <ChevronUp className="w-3 h-3 text-blue-500" /> : <ChevronDown className="w-3 h-3 text-blue-500" />;
+  };
 
   return (
-    <div className="space-y-8">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div className="flex items-center gap-2 bg-stone-100 dark:bg-stone-900 p-1 rounded-xl w-fit">
-          <button
-            onClick={() => setActiveTab('portfolio')}
-            className={cn(
-              "px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 transition-all",
-              activeTab === 'portfolio' ? "bg-white dark:bg-stone-800 text-stone-900 dark:text-stone-100 shadow-sm" : "text-stone-500 hover:text-stone-700"
-            )}
-          >
-            <Briefcase className="w-4 h-4" />
-            {t('portfolio')}
-          </button>
-          <button
-            onClick={() => setActiveTab('history')}
-            className={cn(
-              "px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 transition-all",
-              activeTab === 'history' ? "bg-white dark:bg-stone-800 text-stone-900 dark:text-stone-100 shadow-sm" : "text-stone-500 hover:text-stone-700"
-            )}
-          >
-            <History className="w-4 h-4" />
-            {t('history')}
-          </button>
-        </div>
-        
-        <div className="flex items-center gap-2">
-          {activeTab === 'portfolio' && (
-            <>
-              <Button variant="secondary" onClick={handleRefresh} disabled={isRefreshing} className="gap-2">
-                <RefreshCw className={cn("w-4 h-4", isRefreshing && "animate-spin")} />
-                {isRefreshing ? "Updating..." : "Refresh Prices"}
-              </Button>
-              <Button onClick={() => setShowAdd(!showAdd)}>
-                <Plus className="w-4 h-4" />
-                {t('buyAsset')}
-              </Button>
-            </>
-          )}
-        </div>
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        <div className="lg:col-span-2 space-y-8">
-          {showAdd && activeTab === 'portfolio' && (
-            <Card title={t('buyAsset')} className="border-blue-500 border-2">
-              <form onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 items-end text-left">
-                <div>
-                  <label className="block text-xs font-bold uppercase mb-1 opacity-60">{t('symbol')}</label>
-                  <input 
-                    type="text" 
-                    required
-                    placeholder="AAPL"
-                    value={formData.symbol}
-                    onChange={e => setFormData({...formData, symbol: e.target.value})}
-                    className="w-full bg-stone-50 dark:bg-stone-800 border border-stone-200 dark:border-stone-700 rounded-lg p-2 font-mono"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-bold uppercase mb-1 opacity-60">Buy Price (USD)</label>
-                  <div className="relative">
-                    <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 w-3 h-3 text-stone-400" />
-                    <input 
-                      type="number" 
-                      step="0.01"
-                      required
-                      value={formData.avgBuyPrice}
-                      onChange={e => setFormData({...formData, avgBuyPrice: e.target.value})}
-                      className="w-full bg-stone-50 dark:bg-stone-800 border border-stone-200 dark:border-stone-700 rounded-lg p-2 pl-8"
-                    />
-                  </div>
-                </div>
-                <div>
-                  <label className="block text-xs font-bold uppercase mb-1 opacity-60">{t('shares')}</label>
-                  <input 
-                    type="number" 
-                    required
-                    value={formData.shares}
-                    onChange={e => setFormData({...formData, shares: e.target.value})}
-                    className="w-full bg-stone-50 dark:bg-stone-800 border border-stone-200 dark:border-stone-700 rounded-lg p-2"
-                  />
-                </div>
-                <Button type="submit" className="w-full">{t('save')}</Button>
-              </form>
-            </Card>
-          )}
-
-          {sellStockData && activeTab === 'portfolio' && (
-            <Card title={`${t('sell')} ${sellStockData.symbol}`} className="border-red-500 border-2">
-               <form onSubmit={handleSellSubmit} className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 items-end text-left">
-                  <div>
-                    <label className="block text-xs font-bold uppercase mb-1 opacity-60">Sell Price (USD)</label>
-                    <div className="relative">
-                      <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 w-3 h-3 text-stone-400" />
-                      <input 
-                        type="number" 
-                        step="0.01"
-                        required
-                        autoFocus
-                        value={sellStockData.price}
-                        onChange={e => setSellStockData({...sellStockData, price: e.target.value})}
-                        className="w-full bg-stone-50 dark:bg-stone-800 border border-stone-200 dark:border-stone-700 rounded-lg p-2 pl-8"
-                      />
-                    </div>
-                  </div>
-                  <div>
-                    <label className="block text-xs font-bold uppercase mb-1 opacity-60">{t('shares')}</label>
-                    <input 
-                      type="number" 
-                      required
-                      max={data.stocks.find(s => s.symbol === sellStockData.symbol)?.shares || 0}
-                      value={sellStockData.shares}
-                      onChange={e => setSellStockData({...sellStockData, shares: parseFloat(e.target.value)})}
-                      className="w-full bg-stone-50 dark:bg-stone-800 border border-stone-200 dark:border-stone-700 rounded-lg p-2"
-                    />
-                  </div>
-                  <div className="lg:col-span-2 flex gap-2">
-                    <Button type="submit" variant="danger" className="flex-1">{t('sell')}</Button>
-                    <Button type="button" variant="secondary" onClick={() => setSellStockData(null)}>{t('cancel')}</Button>
-                  </div>
-               </form>
-            </Card>
-          )}
-
-          {activeTab === 'portfolio' ? (
-            <Card>
-              <div className="overflow-x-auto">
-                <table className="w-full text-left">
-                  <thead>
-                    <tr className="border-b border-slate-100 dark:border-slate-800">
-                      <th className="pb-4 font-black text-[10px] uppercase text-slate-300 tracking-[0.2em]">{t('symbol')}</th>
-                      <th className="pb-4 font-black text-[10px] uppercase text-slate-300 tracking-[0.2em]">{t('shares')}</th>
-                      <th className={cn("pb-4 font-black text-[10px] uppercase text-slate-300 tracking-[0.2em]", language === 'he' ? 'text-left' : 'text-right')}>{t('avgCost')}</th>
-                      <th className={cn("pb-4 font-black text-[10px] uppercase text-slate-300 tracking-[0.2em]", language === 'he' ? 'text-left' : 'text-right')}>{t('profit')}</th>
-                      <th className={cn("pb-4 font-black text-[10px] uppercase text-slate-300 tracking-[0.2em]", language === 'he' ? 'text-left' : 'text-right')}>{t('sell')}</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-stone-50 dark:divide-stone-900">
-                    {data.stocks.length === 0 ? (
-                      <tr>
-                        <td colSpan={5} className="py-8 text-center text-sm text-stone-500 italic">Portfolio is empty</td>
-                      </tr>
-                    ) : (
-                      data.stocks.map(s => {
-                        const currentVal = s.currentPrice || s.avgBuyPrice;
-                        const profit = (currentVal - s.avgBuyPrice) * s.shares;
-                        const profitPerc = ((currentVal - s.avgBuyPrice) / s.avgBuyPrice) * 100;
-                        return (
-                          <tr key={s.id} className="group hover:bg-stone-50/50 dark:hover:bg-stone-900/30 transition-colors">
-                            <td className="py-4">
-                              <div className="flex items-center gap-3">
-                                <div className="w-10 h-10 bg-blue-50 dark:bg-blue-900/20 rounded-lg flex items-center justify-center font-bold text-blue-600 text-xs text-center leading-none">
-                                  {s.symbol.slice(0, 2)}
-                                </div>
-                                <div>
-                                  <p className="font-bold text-sm tabular-nums">{s.symbol}</p>
-                                  <p className="text-[10px] text-stone-400 font-medium">Price: {formatCurrency(currentVal, 'USD', language)}</p>
-                                </div>
-                              </div>
-                            </td>
-                            <td className="py-4 font-medium text-sm tabular-nums">{s.shares}</td>
-                            <td className={cn("py-4 text-sm tabular-nums", language === 'he' ? 'text-left' : 'text-right')}>{formatCurrency(s.avgBuyPrice, 'USD', language)}</td>
-                            <td className={cn("py-4 tabular-nums", language === 'he' ? 'text-left' : 'text-right')}>
-                              <div className={cn(
-                                "text-sm font-bold",
-                                profit >= 0 ? "text-emerald-500" : "text-red-500"
-                              )}>
-                                {profit >= 0 ? '+' : ''}{formatCurrency(profit, 'USD', language)}
-                                <span className={cn("block text-[10px] opacity-80", language === 'he' ? 'text-left' : 'text-right')}>({profit >= 0 ? '+' : ''}{profitPerc.toFixed(2)}%)</span>
-                              </div>
-                            </td>
-                            <td className={cn("py-4", language === 'he' ? 'text-left' : 'text-right')}>
-                               <button 
-                                onClick={() => setSellStockData({ symbol: s.symbol, shares: s.shares, price: (s.currentPrice || s.avgBuyPrice).toString() })}
-                                className="px-3 py-1 bg-red-50 dark:bg-red-900/20 text-red-600 rounded-lg text-xs font-bold uppercase transition-all hover:bg-red-100 dark:hover:bg-red-900/40"
-                               >
-                                {t('sell')}
-                               </button>
-                            </td>
-                          </tr>
-                        )
-                      })
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            </Card>
-          ) : (
-            <Card title={t('history')}>
-              <div className="overflow-x-auto">
-                <table className="w-full text-left">
-                  <thead>
-                    <tr className="border-b border-stone-100 dark:border-stone-800">
-                      <th className="pb-4 font-bold text-xs uppercase text-stone-400">{t('date')}</th>
-                      <th className="pb-4 font-bold text-xs uppercase text-stone-400">Type</th>
-                      <th className="pb-4 font-bold text-xs uppercase text-stone-400">{t('symbol')}</th>
-                      <th className="pb-4 font-bold text-xs uppercase text-stone-400 text-right">{t('shares')}</th>
-                      <th className="pb-4 font-bold text-xs uppercase text-stone-400 text-right">Price</th>
-                      <th className="pb-4 font-bold text-xs uppercase text-stone-400 text-right">Total</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-stone-50 dark:divide-stone-900">
-                    {data.stockTransactions.length === 0 ? (
-                      <tr>
-                        <td colSpan={6} className="py-8 text-center text-sm text-stone-500 italic">No history recorded</td>
-                      </tr>
-                    ) : (
-                      data.stockTransactions.map(tData => (
-                        <tr key={tData.id} className="text-sm">
-                          <td className="py-4 text-stone-500">{formatDate(tData.date, language)}</td>
-                          <td className="py-4">
-                            <span className={cn(
-                              "px-2 py-0.5 rounded text-[10px] font-black uppercase",
-                              tData.type === 'buy' ? "bg-emerald-100 text-emerald-700" : "bg-red-100 text-red-700"
-                            )}>
-                              {tData.type}
-                            </span>
-                          </td>
-                          <td className="py-4 font-bold">{tData.symbol}</td>
-                          <td className="py-4 text-right tabular-nums">{tData.shares}</td>
-                          <td className="py-4 text-right tabular-nums">{formatCurrency(tData.price, 'USD', language)}</td>
-                          <td className="py-4 text-right font-bold tabular-nums">
-                            {formatCurrency(tData.shares * tData.price, 'USD', language)}
-                          </td>
-                        </tr>
-                      ))
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            </Card>
-          )}
-        </div>
-
-        <div className="space-y-8">
-          <Card title={t('allocation')} className="h-fit">
-            <div className="h-[240px] w-full">
-              {data.stocks.length > 0 ? (
-                <ResponsiveContainer width="100%" height="100%">
-                  <RePieChart>
-                    <Pie
-                      data={chartData}
-                      innerRadius={60}
-                      outerRadius={80}
-                      paddingAngle={5}
-                      dataKey="value"
-                    >
-                      {chartData.map((entry, index) => (
-                        <Cell key={`cell-${index}`} fill={PIE_COLORS[index % PIE_COLORS.length]} />
-                      ))}
-                    </Pie>
-                    <Tooltip 
-                       contentStyle={{ 
-                        backgroundColor: '#1c1917', 
-                        border: 'none', 
-                        borderRadius: '12px',
-                        color: '#fff'
-                      }}
-                    />
-                  </RePieChart>
-                </ResponsiveContainer>
-              ) : (
-                <div className="h-full flex items-center justify-center text-stone-400 italic text-sm">
-                  Add assets to see allocation
-                </div>
-              )}
+    <div className="space-y-6">
+      {/* Header Section */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white dark:bg-black p-6 rounded-3xl border border-slate-100 dark:border-stone-800 shadow-sm">
+        <div className="flex items-center gap-6">
+          <div>
+            <p className="text-[10px] font-black uppercase text-slate-400 tracking-widest mb-1">{t('totalMarketValue')}</p>
+            <div className="text-3xl font-black tabular-nums dark:text-white">
+              ${portfolioTotals.totalValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
             </div>
-            <div className="mt-4 space-y-2">
-               <div className="flex justify-between text-sm">
-                  <span className="text-stone-500">Total Invested</span>
-                  <span className="font-bold">{formatCurrency(data.stocks.reduce((acc, s) => acc + (s.shares * s.avgBuyPrice), 0), 'USD', language)}</span>
-               </div>
-               <div className="flex justify-between text-sm">
-                  <span className="text-stone-500">{t('marketValue')}</span>
-                  <span className="font-bold text-blue-600">{formatCurrency(totalValue, 'USD', language)}</span>
-               </div>
-               <div className="flex justify-between text-sm pt-2 border-t border-stone-100 dark:border-stone-800">
-                  <span className="text-stone-500">Total Unrealized P/L</span>
-                  <span className={cn("font-bold", totalGain >= 0 ? "text-emerald-500" : "text-red-500")}>
-                    {totalGain >= 0 ? '+' : ''}{formatCurrency(totalGain, 'USD', language)}
-                  </span>
-               </div>
-            </div>
-          </Card>
-
-          <div className="bg-stone-900 text-white rounded-3xl p-8 relative overflow-hidden group">
-            <div className="relative z-10">
-              <TrendingUp className="w-8 h-8 mb-4 opacity-50" />
-              <h3 className="text-xl font-bold mb-2">Market Sentiment</h3>
-              <p className="text-stone-400 text-sm leading-relaxed">
-                Stay updated with the latest trends. Diversify your holdings to mitigate sector-specific risks.
-              </p>
-            </div>
-            <div className="absolute right-[-20%] bottom-[-20%] opacity-10 blur-xl">
-               <div className="w-48 h-48 bg-blue-500 rounded-full" />
+          </div>
+          <div className="h-10 w-[1px] bg-slate-100 dark:bg-stone-800" />
+          <div>
+            <p className="text-[10px] font-black uppercase text-slate-400 tracking-widest mb-1">{t('totalPL')}</p>
+            <div className={cn(
+              "text-xl font-black tabular-nums",
+              portfolioTotals.totalProfitLoss >= 0 ? "text-emerald-500" : "text-red-500"
+            )}>
+              {portfolioTotals.totalProfitLoss >= 0 ? '+' : ''}
+              ${Math.abs(portfolioTotals.totalProfitLoss).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              <span className="text-xs ml-2 opacity-80">
+                ({totalPLPct >= 0 ? '+' : ''}{totalPLPct.toFixed(2)}%)
+              </span>
             </div>
           </div>
         </div>
+
+        <div className="flex items-center gap-4">
+          <div className="text-right">
+             <div className="flex items-center justify-end gap-2 text-[10px] font-black text-slate-400 uppercase tracking-widest">
+              {isRefreshing ? (
+                <>
+                  <RefreshCw className="w-3 h-3 animate-spin text-blue-500" />
+                  Updating...
+                </>
+              ) : (
+                <>
+                  <Clock className="w-3 h-3" />
+                  {t('lastUpdated')}: {lastUpdated ? lastUpdated.toLocaleTimeString() : '---'}
+                </>
+              )}
+            </div>
+            {useCached && (
+              <div className="flex items-center justify-end gap-1 text-[9px] text-amber-500 font-bold uppercase mt-1">
+                <AlertTriangle className="w-2 h-2" />
+                Using Cached Prices
+              </div>
+            )}
+          </div>
+          <Button 
+            onClick={() => setShowAdd(!showAdd)} 
+            className="rounded-2xl gap-2 text-xs font-black uppercase tracking-widest px-6 py-3"
+          >
+            <Plus className="w-4 h-4" />
+            {t('buyAsset')}
+          </Button>
+        </div>
+      </div>
+
+      {/* Add Stock Form overlay */}
+      {showAdd && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-6 bg-black/60 backdrop-blur-sm">
+          <Card className="w-full max-w-lg relative dark:bg-black dark:border-stone-800">
+            <button 
+              onClick={() => setShowAdd(false)}
+              className="absolute right-4 top-4 p-2 hover:bg-slate-100 dark:hover:bg-stone-800 rounded-full transition-colors"
+            >
+              <X className="w-5 h-5 text-slate-400" />
+            </button>
+            
+            <h2 className="text-2xl font-black tracking-tight mb-6 dark:text-white">{t('addToPortfolio')}</h2>
+            
+            <form onSubmit={handleAddSubmit} className="space-y-6 text-left">
+              <div className="grid grid-cols-2 gap-4">
+                <div className="col-span-1">
+                  <label className="block text-[10px] font-black uppercase text-slate-400 mb-2 tracking-widest">{t('symbol')}</label>
+                  <input 
+                    type="text" 
+                    required 
+                    placeholder="AAPL"
+                    className="w-full px-4 py-3 rounded-xl bg-slate-50 dark:bg-stone-800 border border-slate-100 dark:border-stone-700 focus:border-blue-500 outline-none transition-all font-mono font-bold dark:text-white"
+                    value={formData.symbol}
+                    onChange={e => setFormData({...formData, symbol: e.target.value.toUpperCase()})}
+                  />
+                </div>
+                <div className="col-span-1 text-left">
+                  <label className="block text-[10px] font-black uppercase text-slate-400 mb-2 tracking-widest">{t('company')}</label>
+                  <input 
+                    type="text" 
+                    placeholder="Apple Inc."
+                    className="w-full px-4 py-3 rounded-xl bg-slate-50 dark:bg-stone-800 border border-slate-100 dark:border-stone-700 focus:border-blue-500 outline-none transition-all font-bold dark:text-white"
+                    value={formData.name}
+                    onChange={e => setFormData({...formData, name: e.target.value})}
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-[10px] font-black uppercase text-slate-400 mb-2 tracking-widest">{t('shares')}</label>
+                  <input 
+                    type="number" 
+                    required 
+                    step="any"
+                    placeholder="10"
+                    className="w-full px-4 py-3 rounded-xl bg-slate-50 dark:bg-stone-800 border border-slate-100 dark:border-stone-700 focus:border-blue-500 outline-none transition-all font-bold dark:text-white"
+                    value={formData.shares}
+                    onChange={e => setFormData({...formData, shares: e.target.value})}
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-black uppercase text-slate-400 mb-2 tracking-widest">{t('buyPrice')} (USD)</label>
+                  <div className="relative">
+                    <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-300" />
+                    <input 
+                      type="number" 
+                      required 
+                      step="0.01"
+                      placeholder="150.00"
+                      className="w-full px-4 py-3 pl-10 rounded-xl bg-slate-50 dark:bg-stone-800 border border-slate-100 dark:border-stone-700 focus:border-blue-500 outline-none transition-all font-bold dark:text-white"
+                      value={formData.avgBuyPrice}
+                      onChange={e => setFormData({...formData, avgBuyPrice: e.target.value})}
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-black uppercase text-slate-400 mb-2 tracking-widest">{t('buyDate')}</label>
+                <input 
+                  type="date" 
+                  className="w-full px-4 py-3 rounded-xl bg-slate-50 dark:bg-stone-800 border border-slate-100 dark:border-stone-700 focus:border-blue-500 outline-none transition-all font-bold dark:text-white"
+                  value={formData.buyDate}
+                  onChange={e => setFormData({...formData, buyDate: e.target.value})}
+                />
+              </div>
+
+              <Button type="submit" className="w-full py-4 text-xs font-black uppercase tracking-widest shadow-xl shadow-blue-500/20">
+                {t('confirmPurchase')}
+              </Button>
+            </form>
+          </Card>
+        </div>
+      )}
+
+      {/* Main Table Section */}
+      <Card className="p-0 overflow-hidden dark:bg-black dark:border-stone-800">
+        <div className="overflow-x-auto">
+          <table className="w-full text-left border-collapse min-w-[1000px]">
+            <thead>
+              <tr className="bg-slate-50 dark:bg-stone-800/50 border-b border-slate-100 dark:border-stone-800">
+                <th onClick={() => handleSort('symbol')} className="p-4 cursor-pointer hover:bg-slate-100 dark:hover:bg-stone-800 transition-colors">
+                  <div className="flex items-center gap-1 text-[10px] font-black uppercase text-slate-500 tracking-widest">{t('symbol')} <SortIcon ik="symbol" /></div>
+                </th>
+                <th className="p-4 text-[10px] font-black uppercase text-slate-500 tracking-widest">{t('company')}</th>
+                <th onClick={() => handleSort('shares')} className="p-4 cursor-pointer hover:bg-slate-100 dark:hover:bg-stone-800 transition-colors">
+                   <div className="flex items-center gap-1 text-[10px] font-black uppercase text-slate-500 tracking-widest">{t('shares')} <SortIcon ik="shares" /></div>
+                </th>
+                <th onClick={() => handleSort('avgBuyPrice')} className="p-4 cursor-pointer hover:bg-slate-100 dark:hover:bg-stone-800 transition-colors">
+                   <div className="flex items-center gap-1 text-[10px] font-black uppercase text-slate-500 tracking-widest">{t('avgBuy')} <SortIcon ik="avgBuyPrice" /></div>
+                </th>
+                <th onClick={() => handleSort('currentPrice')} className="p-4 cursor-pointer hover:bg-slate-100 dark:hover:bg-stone-800 transition-colors">
+                   <div className="flex items-center gap-1 text-[10px] font-black uppercase text-slate-500 tracking-widest">{t('currentPrice')} <SortIcon ik="currentPrice" /></div>
+                </th>
+                <th onClick={() => handleSort('todayChange')} className="p-4 cursor-pointer hover:bg-slate-100 dark:hover:bg-stone-800 transition-colors">
+                   <div className="flex items-center gap-1 text-[10px] font-black uppercase text-slate-500 tracking-widest">{t('changeToday')} <SortIcon ik="todayChange" /></div>
+                </th>
+                <th onClick={() => handleSort('totalValue')} className="p-4 cursor-pointer hover:bg-slate-100 dark:hover:bg-stone-800 transition-colors">
+                   <div className="flex items-center gap-1 text-[10px] font-black uppercase text-slate-500 tracking-widest">{t('totalValue')} <SortIcon ik="totalValue" /></div>
+                </th>
+                <th onClick={() => handleSort('profitLoss')} className="p-4 cursor-pointer hover:bg-slate-100 dark:hover:bg-stone-800 transition-colors">
+                   <div className="flex items-center gap-1 text-[10px] font-black uppercase text-slate-500 tracking-widest">{t('profitAndLoss')} <SortIcon ik="profitLoss" /></div>
+                </th>
+                <th className="p-4 text-[10px] font-black uppercase text-slate-500 tracking-widest text-right">{t('actions')}</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-50 dark:divide-stone-800/50">
+              {sortedStocks.length === 0 ? (
+                <tr>
+                  <td colSpan={9} className="p-12 text-center text-slate-400 italic">No assets in portfolio.</td>
+                </tr>
+              ) : (
+                sortedStocks.map(s => {
+                  const pnlPos = s.profitLoss >= 0;
+                  const todayPos = (s.todayChange || 0) >= 0;
+                  
+                  return (
+                    <tr 
+                      key={s.id} 
+                      className={cn(
+                        "group hover:bg-slate-50 dark:hover:bg-stone-800 transition-all",
+                        pnlPos ? "bg-emerald-500/[0.02]" : "bg-red-500/[0.02]"
+                      )}
+                    >
+                      <td className="p-4">
+                        <span className="font-black text-sm tracking-tight dark:text-white">{s.symbol}</span>
+                      </td>
+                      <td className="p-4">
+                        <span className="text-xs font-bold text-slate-500 truncate max-w-[120px] block">{s.name}</span>
+                      </td>
+                      <td className="p-4 tabular-nums font-bold text-sm dark:text-slate-200">
+                        {s.shares.toLocaleString()}
+                      </td>
+                      <td className="p-4 tabular-nums text-sm text-slate-500">
+                        ${s.avgBuyPrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </td>
+                      <td className="p-4 tabular-nums font-black text-sm dark:text-white">
+                        ${s.currentPrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </td>
+                      <td className="p-4 tabular-nums text-xs">
+                        <div className={cn(
+                          "font-bold flex items-center gap-1",
+                          todayPos ? "text-emerald-500" : "text-red-500"
+                        )}>
+                          {todayPos ? '+' : ''}{Math.abs(s.todayChange || 0).toFixed(2)}
+                          <span className="opacity-70 text-[10px]">({todayPos ? '+' : ''}{Math.abs(s.todayChangePct || 0).toFixed(2)}%)</span>
+                        </div>
+                      </td>
+                      <td className="p-4 tabular-nums font-black text-sm dark:text-white">
+                        ${s.totalValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </td>
+                      <td className="p-4 tabular-nums">
+                        <div className={cn(
+                          "font-black text-sm flex flex-col",
+                          pnlPos ? "text-emerald-500" : "text-red-500"
+                        )}>
+                          <span>{pnlPos ? '+' : ''}${Math.abs(s.profitLoss).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                          <span className="text-[10px] opacity-70 underline decoration-dotted underline-offset-2">
+                             {pnlPos ? '+' : ''}{s.profitLossPct.toFixed(2)}%
+                          </span>
+                        </div>
+                      </td>
+                      <td className="p-4 text-right">
+                        <button 
+                          onClick={() => {
+                            if (window.confirm(`Sell ${s.symbol}? This will remove it from your portfolio.`)) {
+                              sellStock(s.id);
+                            }
+                          }}
+                          className="p-2 text-slate-300 hover:text-red-500 transition-colors"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </td>
+                    </tr>
+                  )
+                })
+              )}
+            </tbody>
+            {sortedStocks.length > 0 && (
+              <tfoot>
+                <tr className="bg-slate-900 text-white font-black">
+                  <td colSpan={6} className="p-5 text-right uppercase tracking-widest text-[10px]">Portfolio Totals</td>
+                  <td className="p-5 tabular-nums text-base">
+                    ${portfolioTotals.totalValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </td>
+                  <td className={cn(
+                    "p-5 tabular-nums text-base",
+                    portfolioTotals.totalProfitLoss >= 0 ? "text-emerald-400" : "text-red-400"
+                  )}>
+                    {portfolioTotals.totalProfitLoss >= 0 ? '+' : ''}
+                    ${Math.abs(portfolioTotals.totalProfitLoss).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </td>
+                  <td className="p-5"></td>
+                </tr>
+              </tfoot>
+            )}
+          </table>
+        </div>
+      </Card>
+      
+      <div className="flex items-center gap-4 text-slate-400">
+        <TrendingUp className="w-5 h-5 opacity-50" />
+        <p className="text-xs font-medium italic">
+          {t('marketDataDelay')}
+        </p>
       </div>
     </div>
   );

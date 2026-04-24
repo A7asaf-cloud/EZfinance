@@ -8,6 +8,7 @@ import { motion } from 'motion/react';
 
 export default function SavingsModule() {
   const { data, addSavingsGoal, deleteSavingsGoal } = useFinanceData();
+  const { t, language } = useUI();
   const [showAdd, setShowAdd] = useState(false);
 
   const [formData, setFormData] = useState({
@@ -41,15 +42,15 @@ export default function SavingsModule() {
   return (
     <div className="space-y-8">
       <div className="flex items-center justify-between">
-        <h2 className="text-2xl font-bold tracking-tight">Savings Goals</h2>
+        <h2 className="text-2xl font-bold tracking-tight">{t('savings')}</h2>
         <Button onClick={() => setShowAdd(!showAdd)}>
           <Plus className="w-4 h-4" />
-          New Goal
+          {t('buyAsset')}
         </Button>
       </div>
 
       {showAdd && (
-        <Card title="Start a New Goal" className="border-emerald-500 border-2 max-w-2xl">
+        <Card title={t('buyAsset')} className="border-emerald-500 border-2 max-w-2xl">
           <form onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-2 gap-4 text-left">
             <div className="md:col-span-2">
               <label className="block text-xs font-bold uppercase mb-1 opacity-60">Goal Name</label>
@@ -63,7 +64,7 @@ export default function SavingsModule() {
               />
             </div>
             <div>
-              <label className="block text-xs font-bold uppercase mb-1 opacity-60">Target Amount</label>
+              <label className="block text-xs font-bold uppercase mb-1 opacity-60">{t('amount')} (USD)</label>
               <input 
                 type="number" 
                 required
@@ -82,7 +83,7 @@ export default function SavingsModule() {
               />
             </div>
             <div>
-              <label className="block text-xs font-bold uppercase mb-1 opacity-60">Target Date</label>
+              <label className="block text-xs font-bold uppercase mb-1 opacity-60">{t('date')}</label>
               <input 
                 type="date" 
                 value={formData.deadline}
@@ -100,7 +101,7 @@ export default function SavingsModule() {
               />
             </div>
             <div className="md:col-span-2">
-              <Button type="submit" className="w-full bg-emerald-600 hover:bg-emerald-700 text-white">Create Goal</Button>
+              <Button type="submit" className="w-full bg-emerald-600 hover:bg-emerald-700 text-white">{t('save')}</Button>
             </div>
           </form>
         </Card>
@@ -134,7 +135,7 @@ export default function SavingsModule() {
                   </div>
                   <div>
                     <h3 className="font-bold text-lg">{g.name}</h3>
-                    <p className="text-xs text-stone-500 uppercase font-semibold">Target: {formatCurrency(g.targetAmount)}</p>
+                    <p className="text-xs text-stone-500 uppercase font-semibold">Target: {formatCurrency(g.targetAmount, 'USD', language)}</p>
                   </div>
                 </div>
 
@@ -142,7 +143,7 @@ export default function SavingsModule() {
                   <div className="flex justify-between items-end mb-1">
                     <span className="text-2xl font-black tabular-nums">{Math.min(100, Math.round(progress))}%</span>
                     <span className="text-xs font-bold text-stone-500 uppercase">
-                      {formatCurrency(g.currentAmount)} Saved
+                      {formatCurrency(g.currentAmount, 'USD', language)} Saved
                     </span>
                   </div>
                   
@@ -169,7 +170,7 @@ export default function SavingsModule() {
                         <TrendingUp className="w-3 h-3" />
                         <span className="text-[10px] font-bold uppercase">Monthly Save</span>
                       </div>
-                      <p className="font-bold text-sm line-clamp-1">{formatCurrency(monthlyPlan)}</p>
+                      <p className="font-bold text-sm line-clamp-1">{formatCurrency(monthlyPlan, 'USD', language)}</p>
                     </div>
                   </div>
                 </div>

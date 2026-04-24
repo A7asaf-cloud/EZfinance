@@ -5,8 +5,11 @@ import { formatCurrency, cn } from '../lib/utils';
 import { Umbrella, Landmark, ArrowRight, History } from 'lucide-react';
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
 
+import { useUI } from '../contexts/UIContext';
+
 export default function PensionModule() {
   const { data, updatePension } = useFinanceData();
+  const { t, language } = useUI();
   const { balance, monthlyContribution, retirementDate, expectedAnnualReturn } = data.pension;
 
   const currentYear = new Date().getFullYear();
@@ -32,7 +35,7 @@ export default function PensionModule() {
   return (
     <div className="space-y-8">
       <div className="flex items-center justify-between">
-        <h2 className="text-2xl font-bold tracking-tight">Pension & Retirement</h2>
+        <h2 className="text-2xl font-bold tracking-tight">{t('pension')}</h2>
         <div className="flex items-center gap-2 px-3 py-1.5 bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 rounded-full text-xs font-bold uppercase">
           <Landmark className="w-3 h-3" />
           Fund Secure
@@ -42,13 +45,13 @@ export default function PensionModule() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 text-left">
         <Card className="lg:col-span-1 space-y-6">
           <div className="p-4 bg-stone-900 text-white rounded-2xl">
-            <p className="text-stone-400 text-xs font-bold uppercase tracking-widest mb-1">Current Balanced</p>
-            <h3 className="text-3xl font-black tabular-nums">{formatCurrency(balance)}</h3>
+            <p className="text-stone-400 text-xs font-bold uppercase tracking-widest mb-1">{t('balance')}</p>
+            <h3 className="text-3xl font-black tabular-nums">{formatCurrency(balance, 'USD', language)}</h3>
           </div>
 
           <div className="space-y-4">
             <div>
-              <label className="block text-xs font-bold uppercase mb-2 opacity-60">Monthly Contribution</label>
+              <label className="block text-xs font-bold uppercase mb-2 opacity-60">{t('monthlyContribution')}</label>
               <div className="flex items-center gap-4">
                 <input 
                   type="range" 
@@ -59,12 +62,12 @@ export default function PensionModule() {
                   onChange={e => updatePension({ monthlyContribution: parseInt(e.target.value) })}
                   className="flex-1 accent-stone-900 dark:accent-stone-100"
                 />
-                <span className="font-bold text-sm w-20 text-right">{formatCurrency(monthlyContribution)}</span>
+                <span className="font-bold text-sm w-20 text-right">{formatCurrency(monthlyContribution, 'USD', language)}</span>
               </div>
             </div>
 
             <div>
-              <label className="block text-xs font-bold uppercase mb-1 opacity-60">Expected Annual Return (%)</label>
+              <label className="block text-xs font-bold uppercase mb-1 opacity-60">{t('expectedReturn')} (%)</label>
               <input 
                 type="number" 
                 value={expectedAnnualReturn}
@@ -122,7 +125,7 @@ export default function PensionModule() {
                     borderRadius: '12px',
                     color: '#fff'
                   }}
-                  formatter={(val: number) => formatCurrency(val)}
+                  formatter={(val: number) => formatCurrency(val, 'USD', language)}
                 />
                 <Area type="monotone" dataKey="value" stroke="#8b5cf6" strokeWidth={3} fillOpacity={1} fill="url(#colorPension)" />
               </AreaChart>
@@ -132,7 +135,7 @@ export default function PensionModule() {
           <div className="mt-8 grid grid-cols-1 md:grid-cols-2 gap-6 p-6 bg-stone-50 dark:bg-stone-900 rounded-2xl border border-stone-100 dark:border-stone-800">
             <div>
               <p className="text-stone-500 text-xs font-bold uppercase mb-1">Est. Portfolio at {retirementYear}</p>
-              <p className="text-3xl font-black text-violet-600 dark:text-violet-400 tabular-nums">{formatCurrency(finalValue)}</p>
+              <p className="text-3xl font-black text-violet-600 dark:text-violet-400 tabular-nums">{formatCurrency(finalValue, 'USD', language)}</p>
             </div>
             <div className="flex flex-col justify-center">
               <div className="flex items-center gap-2 text-stone-500 text-xs font-bold uppercase">
@@ -140,7 +143,7 @@ export default function PensionModule() {
                 Monthly Withdrawal Potential
               </div>
               <p className="text-xl font-bold text-stone-900 dark:text-stone-100 tabular-nums">
-                {formatCurrency(finalValue * 0.04 / 12)} / month
+                {formatCurrency(finalValue * 0.04 / 12, 'USD', language)} / month
                 <span className="block text-[10px] opacity-60 font-normal normal-case mt-1 italic">Based on standard 4% rule</span>
               </p>
             </div>

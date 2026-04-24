@@ -1,11 +1,11 @@
-import { useState, useCallback, useEffect } from 'react';
-import { useAuth } from '../contexts/AuthContext';
-import {
-  FinanceData,
-  Transaction,
-  Stock,
-  SavingsGoal,
-  PensionFund,
+import { useEffect, useState, useCallback } from 'react';
+import { fetchStockPrices } from '../services/stocksService';
+import { 
+  FinanceData, 
+  Transaction, 
+  Stock, 
+  SavingsGoal, 
+  PensionFund, 
   StockTransaction,
   Recurring
 } from '../types';
@@ -16,6 +16,8 @@ const INITIAL_PENSION: PensionFund = {
   retirementDate: new Date(new Date().getFullYear() + 25, 0, 1).toISOString(),
   expectedAnnualReturn: 7,
 };
+
+const STORAGE_KEY = 'ez_finance_data';
 
 const INITIAL_DATA: FinanceData = {
   transactions: [],
@@ -28,117 +30,201 @@ const INITIAL_DATA: FinanceData = {
   balance: 0,
 };
 
-function getKey(userId: string) { return 'ezfinance_data_' + userId; }
-
-function loadData(userId: string): FinanceData {
-  try {
-    const raw = localStorage.getItem(getKey(userId));
-    return raw ? { ...INITIAL_DATA, ...JSON.parse(raw) } : { ...INITIAL_DATA };
-  } catch { return { ...INITIAL_DATA }; }
-}
-
-function saveData(userId: string, data: FinanceData) {
-  localStorage.setItem(getKey(userId), JSON.stringify(data));
-}
-
-function uid() { return Math.random().toString(36).slice(2) + Date.now().toString(36); }
-
 export function useFinanceData() {
-  const { user } = useAuth();
-  const [data, setDataState] = useState<FinanceData>(INITIAL_DATA);
+  const [data, setData] = useState<FinanceData>(INITIAL_DATA);
   const [loading, setLoading] = useState(true);
 
+  // Load from localStorage
   useEffect(() => {
-    if (!user) { setLoading(false); return; }
-    setDataState(loadData(user.id));
-    setLoading(false);
-  }, [user]);
-
-  const update = useCallback((updater: (prev: FinanceData) => FinanceData) => {
-    if (!user) return;
-    setDataState(prev => {
-      const next = updater(prev);
-      saveData(user.id, next);
-      return next;
-    });
-  }, [user]);
-
-  const addTransaction = useCallback(async (t: Omit<Transaction, 'id'>) => {
-    update(prev => ({
-      ...prev,
-      balance: t.type === 'income' ? prev.balance + t.amount : prev.balance - t.amount,
-      transactions: [{ ...t, id: uid() }, ...prev.transactions],
-    }));
-  }, [update]);
-
-  const deleteTransaction = useCallback(async (id: string) => {
-    update(prev => {
-      const t = prev.transactions.find(x => x.id === id);
-      if (!t) return prev;
-      return {
-        ...prev,
-        balance: t.type === 'income' ? prev.balance - t.amount : prev.balance + t.amount,
-        transactions: prev.transactions.filter(x => x.id !== id),
-      };
-    });
-  }, [update]);
-
-  const addStock = useCallback(async (s: Omit<Stock, 'id' | 'currentPrice'>) => {
-    update(prev => {
-      const cost = s.shares * s.avgBuyPrice;
-      const existing = prev.stocks.find(x => x.symbol === s.symbol);
-      let newStocks: Stock[];
-      if (existing) {
-        const totalShares = existing.shares + s.shares;
-        const newAvg = ((existing.shares * existing.avgBuyPrice) + (s.shares * s.avgBuyPrice)) / totalShares;
-        newStocks = prev.stocks.map(x => x.symbol === s.symbol
-          ? { ...x, shares: totalShares, avgBuyPrice: newAvg, currentPrice: s.avgBuyPrice } : x);
-      } else {
-        newStocks = [...prev.stocks, { ...s, id: uid(), currentPrice: s.avgBuyPrice }];
+    const saved = localStorage.getItem(STORAGE_KEY);
+    if (saved) {
+      try {
+        setData(JSON.parse(saved));
+      } catch (e) {
+        console.error("Failed to parse data", e);
       }
-      return {
-        ...prev,
-        balance: prev.balance - cost,
-        stocks: newStocks,
-        stockTransactions: [{ id: uid(), symbol: s.symbol, shares: s.shares, price: s.avgBuyPrice, date: new Date().toISOString(), type: 'buy' as const }, ...prev.stockTransactions],
-      };
+    }
+    setLoading(false);
+  }, []);
+
+  // Persist to localStorage
+  const persistData = useCallback((newData: FinanceData) => {
+    setData(newData);
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(newData));
+  }, []);
+
+  const addTransaction = useCallback((t: Omit<Transaction, 'id'>) => {
+    const id = Math.random().toString(36).substr(2, 9);
+    const newTransaction = { ...t, id };
+    const newBalance = t.type === 'income' ? data.balance + t.amount : data.balance - t.amount;
+    
+    persistData({
+      ...data,
+      balance: newBalance,
+      transactions: [newTransaction, ...data.transactions]
     });
-  }, [update]);
+  }, [data, persistData]);
 
-  const sellStock = useCallback(async (symbol: string, shares: number, price: number) => {
-    update(prev => {
-      const stock = prev.stocks.find(x => x.symbol === symbol);
-      if (!stock || stock.shares < shares) return prev;
-      return {
-        ...prev,
-        balance: prev.balance + shares * price,
-        stocks: stock.shares === shares
-          ? prev.stocks.filter(x => x.symbol !== symbol)
-          : prev.stocks.map(x => x.symbol === symbol ? { ...x, shares: x.shares - shares } : x),
-        stockTransactions: [{ id: uid(), symbol, shares, price, date: new Date().toISOString(), type: 'sell' as const }, ...prev.stockTransactions],
-      };
+  const deleteTransaction = useCallback((id: string) => {
+    const t = data.transactions.find(trans => trans.id === id);
+    if (!t) return;
+    
+    const newBalance = t.type === 'income' ? data.balance - t.amount : data.balance + t.amount;
+    persistData({
+      ...data,
+      balance: newBalance,
+      transactions: data.transactions.filter(trans => trans.id !== id)
     });
-  }, [update]);
+  }, [data, persistData]);
 
-  const updatePension = useCallback(async (p: Partial<PensionFund>) => {
-    update(prev => ({ ...prev, pension: { ...prev.pension, ...p } }));
-  }, [update]);
+  const addStock = useCallback((s: Omit<Stock, 'id' | 'currentPrice'>) => {
+    const cost = s.shares * s.avgBuyPrice;
+    const existingIndex = data.stocks.findIndex(item => item.symbol === s.symbol);
+    
+    let newStocks = [...data.stocks];
+    if (existingIndex >= 0) {
+      const existing = newStocks[existingIndex];
+      const newTotalShares = existing.shares + s.shares;
+      const newAvgPrice = ((existing.shares * existing.avgBuyPrice) + (s.shares * s.avgBuyPrice)) / newTotalShares;
+      newStocks[existingIndex] = {
+        ...existing,
+        shares: newTotalShares,
+        avgBuyPrice: newAvgPrice,
+        currentPrice: s.avgBuyPrice,
+        buyDate: s.buyDate || new Date().toISOString()
+      };
+    } else {
+      const newStock = { 
+        ...s, 
+        id: Math.random().toString(36).substr(2, 9),
+        currentPrice: s.avgBuyPrice 
+      };
+      newStocks.push(newStock);
+    }
 
-  const addSavingsGoal = useCallback(async (g: Omit<SavingsGoal, 'id'>) => {
-    update(prev => ({ ...prev, savingsGoals: [...prev.savingsGoals, { ...g, id: uid() }] }));
-  }, [update]);
+    const historyEntry: StockTransaction = {
+      id: Math.random().toString(36).substr(2, 9),
+      symbol: s.symbol,
+      shares: s.shares,
+      price: s.avgBuyPrice,
+      date: s.buyDate || new Date().toISOString(),
+      type: 'buy'
+    };
 
-  const deleteSavingsGoal = useCallback(async (id: string) => {
-    update(prev => ({ ...prev, savingsGoals: prev.savingsGoals.filter(x => x.id !== id) }));
-  }, [update]);
+    persistData({
+      ...data,
+      balance: data.balance - cost,
+      stocks: newStocks,
+      stockTransactions: [historyEntry, ...data.stockTransactions]
+    });
+  }, [data, persistData]);
 
-  const addRecurring = useCallback(async (r: Omit<Recurring, 'id'>) => {
-    update(prev => ({ ...prev, recurring: [...prev.recurring, { ...r, id: uid() }] }));
-  }, [update]);
+  const sellStock = useCallback((symbol: string, shares: number, price: number) => {
+    const stockIndex = data.stocks.findIndex(s => s.symbol === symbol);
+    if (stockIndex < 0) return;
+    
+    const stock = data.stocks[stockIndex];
+    let newStocks = [...data.stocks];
+    
+    if (stock.shares <= shares) {
+      newStocks.splice(stockIndex, 1);
+    } else {
+      newStocks[stockIndex] = { ...stock, shares: stock.shares - shares };
+    }
 
-  const deleteRecurring = useCallback(async (id: string) => {
-    update(prev => ({ ...prev, recurring: prev.recurring.filter(x => x.id !== id) }));
-  }, [update]);
+    const historyEntry: StockTransaction = {
+      id: Math.random().toString(36).substr(2, 9),
+      symbol,
+      shares,
+      price,
+      date: new Date().toISOString(),
+      type: 'sell'
+    };
 
-  return { data, loading, addTransaction, deleteTransaction, addStock, sellStock, updatePension, addSavingsGoal, deleteSavingsGoal, addRecurring, deleteRecurring, setData: update };
+    persistData({
+      ...data,
+      balance: data.balance + (shares * price),
+      stocks: newStocks,
+      stockTransactions: [historyEntry, ...data.stockTransactions]
+    });
+  }, [data, persistData]);
+
+  const updatePension = useCallback((p: Partial<PensionFund>) => {
+    persistData({
+      ...data,
+      pension: { ...data.pension, ...p }
+    });
+  }, [data, persistData]);
+
+  const addSavingsGoal = useCallback((g: Omit<SavingsGoal, 'id'>) => {
+    persistData({
+      ...data,
+      savingsGoals: [...data.savingsGoals, { ...g, id: Math.random().toString(36).substr(2, 9) }]
+    });
+  }, [data, persistData]);
+
+  const addRecurring = useCallback((r: Omit<Recurring, 'id'>) => {
+    persistData({
+      ...data,
+      recurring: [...data.recurring, { ...r, id: Math.random().toString(36).substr(2, 9) }]
+    });
+  }, [data, persistData]);
+
+  const deleteRecurring = useCallback((id: string) => {
+    persistData({
+      ...data,
+      recurring: data.recurring.filter(r => r.id !== id)
+    });
+  }, [data, persistData]);
+
+  const deleteSavingsGoal = useCallback((id: string) => {
+    persistData({
+      ...data,
+      savingsGoals: data.savingsGoals.filter(g => g.id !== id)
+    });
+  }, [data, persistData]);
+
+  const refreshStockPrices = useCallback(async () => {
+    if (data.stocks.length === 0) return;
+    const symbols = data.stocks.map(s => s.symbol);
+    const results = await fetchStockPrices(symbols);
+    
+    if (Object.keys(results).length === 0) return;
+
+    const newStocks = data.stocks.map(s => {
+      if (results[s.symbol]) {
+        return { 
+          ...s, 
+          currentPrice: results[s.symbol].price,
+          todayChange: results[s.symbol].change,
+          todayChangePct: results[s.symbol].changePct
+        };
+      }
+      return s;
+    });
+
+    persistData({ ...data, stocks: newStocks });
+  }, [data, persistData]);
+
+  const clearAllData = useCallback(() => {
+    localStorage.removeItem(STORAGE_KEY);
+    setData(INITIAL_DATA);
+  }, []);
+
+  return {
+    data,
+    loading,
+    addTransaction,
+    addStock,
+    sellStock,
+    updatePension,
+    addSavingsGoal,
+    deleteTransaction,
+    addRecurring,
+    deleteRecurring,
+    deleteSavingsGoal,
+    refreshStockPrices,
+    clearAllData,
+    setData: persistData
+  };
 }

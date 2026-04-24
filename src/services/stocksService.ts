@@ -1,28 +1,45 @@
-import { GoogleGenAI } from "@google/genai";
+interface StockPriceInfo {
+  price: number;
+  change: number;
+  changePct: number;
+}
 
-export async function fetchStockPrices(symbols: string[]): Promise<Record<string, number>> {
+export async function fetchStockPrices(symbols: string[]): Promise<Record<string, StockPriceInfo>> {
   if (symbols.length === 0) return {};
 
-  try {
-    const apiKey = process.env.GEMINI_API_KEY;
-    if (!apiKey) {
-      console.warn("GEMINI_API_KEY is not defined");
-      return {};
+  const results: Record<string, StockPriceInfo> = {};
+
+  const fetchSymbol = async (symbol: string) => {
+    try {
+      const url = `https://query1.finance.yahoo.com/v8/finance/chart/${symbol}?interval=1d&range=1d`;
+      const proxiedUrl = `https://corsproxy.io/?${encodeURIComponent(url)}`;
+      
+      const response = await fetch(proxiedUrl);
+      if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+      
+      const data = await response.json();
+      const result = data.chart?.result?.[0];
+      
+      if (result && result.meta) {
+        const meta = result.meta;
+        const currentPrice = meta.regularMarketPrice;
+        const previousClose = meta.chartPreviousClose || meta.previousClose;
+        const change = currentPrice - previousClose;
+        const changePct = (change / previousClose) * 100;
+        
+        results[symbol] = {
+          price: currentPrice,
+          change: change,
+          changePct: changePct
+        };
+      }
+    } catch (error) {
+      console.error(`Error fetching ${symbol}:`, error);
     }
+  };
 
-    const ai = new GoogleGenAI({ apiKey });
-    const response = await ai.models.generateContent({
-      model: "gemini-2.0-flash",
-      contents: `You are a financial data provider. Return a JSON object with the current market price in USD for the following stock symbols: ${symbols.join(", ")}. 
-      Example: {"AAPL": 175.25, "TSLA": 240.10}. 
-      Only return the JSON object, no other text.`
-    });
-
-    const text = response.text || "";
-    const cleanText = text.replace(/```json|```/g, "").trim();
-    return JSON.parse(cleanText);
-  } catch (error) {
-    console.error("Error fetching stock prices:", error);
-    return {};
-  }
+  // Fetch all in parallel
+  await Promise.all(symbols.map(fetchSymbol));
+  
+  return results;
 }

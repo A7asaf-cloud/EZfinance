@@ -25,9 +25,10 @@ import StockModule from './modules/StockModule';
 import SavingsModule from './modules/SavingsModule';
 import PensionModule from './modules/PensionModule';
 import ImportModule from './modules/ImportModule';
+import SettingsModule from './modules/SettingsModule';
 import AuthScreen from './modules/AuthScreen';
 
-type ModuleId = 'overview' | 'cash' | 'stocks' | 'savings' | 'pension' | 'import';
+type ModuleId = 'overview' | 'cash' | 'stocks' | 'savings' | 'pension' | 'import' | 'settings';
 
 export default function App() {
   const { user, loading, logout } = useAuth();
@@ -44,7 +45,7 @@ export default function App() {
     { id: 'stocks', label: t('stocks'), icon: TrendingUp },
     { id: 'savings', label: t('savings'), icon: Target },
     { id: 'pension', label: t('pension'), icon: Umbrella },
-    { id: 'import', label: t('import'), icon: FileUp },
+    { id: 'settings', label: t('settings'), icon: Settings },
   ];
 
   const renderModule = () => {
@@ -54,13 +55,13 @@ export default function App() {
       case 'stocks': return <StockModule />;
       case 'savings': return <SavingsModule />;
       case 'pension': return <PensionModule />;
-      case 'import': return <ImportModule />;
+      case 'settings': return <SettingsModule />;
       default: return <Overview onNavigate={setActiveModule} />;
     }
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 dark:bg-black text-slate-900 dark:text-slate-100 flex font-sans selection:bg-blue-100 dark:selection:bg-slate-800">
+    <div className="min-h-screen bg-white dark:bg-black text-slate-900 dark:text-slate-100 flex font-sans selection:bg-blue-100 dark:selection:bg-slate-800">
       {/* Mobile Sidebar Overlay */}
       <AnimatePresence>
         {sidebarOpen && (
@@ -76,14 +77,14 @@ export default function App() {
 
       {/* Sidebar */}
       <aside className={cn(
-        "fixed lg:static inset-y-0 left-0 z-50 w-64 bg-white dark:bg-slate-950 border-r border-slate-200 dark:border-slate-900 transition-transform lg:translate-x-0 overflow-y-auto",
+        "fixed lg:static inset-y-0 left-0 z-50 w-64 bg-white dark:bg-black border-r border-slate-200 dark:border-stone-800 transition-transform lg:translate-x-0 overflow-y-auto",
         sidebarOpen ? "translate-x-0" : "-translate-x-full",
         dir === 'rtl' && "left-auto right-0 translate-x-full lg:translate-x-0",
         dir === 'rtl' && sidebarOpen && "translate-x-0"
       )}>
         <div className="p-8 flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <div className="text-xl font-black tracking-tighter text-blue-700 dark:text-blue-400 italic">EZ<span className="text-slate-300 dark:text-slate-700 font-normal not-italic tracking-normal">finance</span></div>
+            <div className="text-xl font-black tracking-tighter text-blue-700 dark:text-blue-400 italic">EZ<span className="text-slate-400 dark:text-stone-600 font-normal not-italic tracking-normal">finance</span></div>
           </div>
           <button onClick={() => setSidebarOpen(false)} className="lg:hidden text-slate-400 hover:text-slate-600">
             <X className="w-5 h-5" />
@@ -119,49 +120,68 @@ export default function App() {
             </button>
           ))}
         </nav>
-
-        <div className="absolute bottom-0 w-full p-6 border-t border-slate-100 dark:border-slate-900 space-y-4">
-          <div className="flex items-center justify-between px-2">
-            <div className="flex gap-2">
-              <button onClick={toggleTheme} className="p-2 hover:bg-slate-50 dark:hover:bg-slate-900 rounded-full transition-colors border border-transparent hover:border-slate-200">
-                {theme === 'light' ? <Moon className="w-4 h-4 text-slate-500" /> : <Sun className="w-4 h-4 text-slate-500" />}
-              </button>
-              <button 
-                onClick={() => setLanguage(language === 'en' ? 'he' : 'en')} 
-                className="p-2 hover:bg-slate-50 dark:hover:bg-slate-900 rounded-full transition-colors border border-transparent hover:border-slate-200 text-[10px] font-black text-slate-500"
-              >
-                {language === 'en' ? 'HE' : 'EN'}
-              </button>
-            </div>
-            <div className="text-[10px] font-black uppercase text-slate-300 tracking-widest">{language}</div>
-          </div>
-          <button 
-            onClick={logout}
-            className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-all font-bold text-sm"
-          >
-            <LogOut className="w-4 h-4" />
-            <span>{t('logout')}</span>
-          </button>
-        </div>
       </aside>
 
       {/* Main Content */}
-      <main className="flex-1 flex flex-col min-w-0">
-        <header className="h-20 bg-white/70 dark:bg-black/70 backdrop-blur-xl flex items-center justify-between px-8 sticky top-0 z-30 border-b border-slate-100 dark:border-slate-900">
+      <main className="flex-1 flex flex-col min-w-0 bg-slate-50 dark:bg-black">
+        <header className="h-24 bg-white/70 dark:bg-black/70 backdrop-blur-xl flex items-center justify-between px-8 sticky top-0 z-30 border-b border-slate-100 dark:border-stone-800 border-dashed">
           <button onClick={() => setSidebarOpen(true)} className="lg:hidden p-2 text-slate-500">
             <Menu className="w-5 h-5" />
           </button>
           <div className="flex-1">
             <h1 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-1 italic">
-              Editorial Summary
+              {user?.name ? (language === 'he' ? `שלום, ${user.name} 👋` : `Hi, ${user.name} 👋`) : 'Editorial Summary'}
             </h1>
             <div className="text-xl font-bold flex items-center gap-2">
               {menuItems.find(m => m.id === activeModule)?.label}
               <span className="w-1.5 h-1.5 rounded-full bg-green-500"></span>
             </div>
           </div>
-          <div className="flex items-center gap-4">
-             {/* Profile/Quick Info could go here */}
+          <div className="flex items-center gap-6">
+            <div className="flex items-center gap-2 bg-slate-100 dark:bg-stone-900 p-1.5 rounded-2xl">
+              <button 
+                onClick={() => setLanguage(language === 'en' ? 'he' : 'en')}
+                className="px-3 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all hover:bg-white dark:hover:bg-black text-slate-500"
+              >
+                {language === 'en' ? 'HE' : 'EN'}
+              </button>
+              
+              <button 
+                onClick={() => setActiveModule('settings')}
+                className={cn(
+                  "p-2 rounded-xl transition-all",
+                  activeModule === 'settings' ? "bg-white dark:bg-black text-blue-600 shadow-sm" : "text-slate-500 hover:bg-white dark:hover:bg-black"
+                )}
+              >
+                <Settings className="w-4 h-4" />
+              </button>
+
+              <button 
+                onClick={toggleTheme}
+                className="p-2 rounded-xl text-slate-500 hover:bg-white dark:hover:bg-black transition-all"
+              >
+                {theme === 'light' ? <Moon className="w-4 h-4" /> : <Sun className="w-4 h-4" />}
+              </button>
+
+              <div className="w-px h-4 bg-slate-200 dark:bg-stone-800 mx-1" />
+
+              <button 
+                onClick={logout}
+                className="p-2 rounded-xl text-red-500 hover:bg-white dark:hover:bg-black transition-all"
+                title={t('logout')}
+              >
+                <LogOut className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Quick Balance or Sync Status */}
+            <div className="hidden md:flex flex-col items-end">
+              <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none mb-1">Status</div>
+              <div className="flex items-center gap-1.5 text-[10px] font-bold text-green-500 uppercase tracking-tight">
+                <span className="w-1 h-1 rounded-full bg-green-500 animate-pulse"></span>
+                Connected
+              </div>
+            </div>
           </div>
         </header>
 

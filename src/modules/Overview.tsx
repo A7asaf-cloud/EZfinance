@@ -10,10 +10,11 @@ import {
   AreaChart, 
   Area 
 } from 'recharts';
+import { useAuth } from '../contexts/AuthContext';
 import { useFinanceData } from '../hooks/useFinanceData';
 import { Card } from '../components/UI';
 import { formatCurrency, cn } from '../lib/utils';
-import { TrendingUp, TrendingDown, ArrowUpRight, Plus, Target, Briefcase, DollarSign, LineChart } from 'lucide-react';
+import { TrendingUp, TrendingDown, ArrowUpRight, Plus, Target, Briefcase, DollarSign, LineChart, Moon, Sun } from 'lucide-react';
 import { COLORS } from '../types';
 import { useUI } from '../contexts/UIContext';
 
@@ -23,28 +24,42 @@ interface OverviewProps {
 
 export default function Overview({ onNavigate }: OverviewProps) {
   const { data } = useFinanceData();
-  const { t, language } = useUI();
+  const { user } = useAuth();
+  const { t, language, setLanguage, theme, toggleTheme } = useUI();
 
   const stockValue = data.stocks.reduce((acc, s) => acc + (s.shares * (s.currentPrice || s.avgBuyPrice)), 0);
   const netWorth = data.balance + 
-    stockValue * 3.7 + // Convert USD stocks to ILS roughly if showing total in ILS
+    stockValue + 
     data.savingsGoals.reduce((acc, g) => acc + g.currentAmount, 0);
 
+  const totalStockInvestment = data.stocks.reduce((acc, s) => acc + (s.shares * s.avgBuyPrice), 0);
+  const totalStockProfit = stockValue - totalStockInvestment;
+  const totalStockProfitPerc = totalStockInvestment > 0 ? (totalStockProfit / totalStockInvestment) * 100 : 0;
+
   const stats = [
-    { label: t('totalWealth'), value: netWorth, change: '+4.5%', trend: 'up', icon: DollarSign, currency: 'ILS' },
-    { label: t('balance'), value: data.balance, change: '-2.1%', trend: 'down', icon: Target, currency: 'ILS' },
+    { label: t('totalWealth'), value: netWorth, change: '+4.5%', trend: 'up', icon: DollarSign, currency: 'USD' },
+    { label: 'Total Stock Profit', value: totalStockProfit, change: `${totalStockProfitPerc >= 0 ? '+' : ''}${totalStockProfitPerc.toFixed(1)}%`, trend: totalStockProfit >= 0 ? 'up' : 'down', icon: TrendingUp, currency: 'USD' },
     { label: t('marketValue'), value: stockValue, change: '+12.3%', trend: 'up', icon: LineChart, currency: 'USD' },
-    { label: t('pension'), value: data.pension.balance, change: '+0.8%', trend: 'up', icon: Briefcase, currency: 'ILS' },
+    { label: t('pension'), value: data.pension.balance, change: '+0.8%', trend: 'up', icon: Briefcase, currency: 'USD' },
   ];
 
   return (
     <div className="space-y-12 pb-12">
+      <div className="flex flex-col md:flex-row md:items-end justify-between gap-6">
+        <div>
+          <h1 className="text-4xl font-light tracking-tighter text-slate-900 dark:text-white capitalize">
+            {t('welcome').split(' ')[0]} <span className="font-bold underline decoration-blue-500 underline-offset-8 decoration-4">{user?.name || 'User'}</span>
+          </h1>
+          <p className="text-sm text-slate-400 dark:text-slate-500 mt-2 font-medium">Your financial landscape at a glance.</p>
+        </div>
+      </div>
+
       {/* Editorial Highlights */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         {stats.map((s, i) => (
-          <Card key={i} delay={i * 0.1} className="relative overflow-hidden group">
-            <h3 className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500 mb-2">{s.label}</h3>
-            <div className="text-3xl font-light tracking-tight text-slate-900 dark:text-slate-100 flex items-baseline gap-1">
+          <Card key={i} delay={i * 0.1} className="relative overflow-hidden group border-b-4 border-b-transparent hover:border-b-blue-500 transition-all">
+            <h3 className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-stone-500 mb-2">{s.label}</h3>
+            <div className="text-3xl font-light tracking-tight text-slate-900 dark:text-white flex items-baseline gap-1">
               <span>{formatCurrency(s.value, s.currency, language).split('.')[0]}</span>
               <span className="text-sm opacity-40">.{formatCurrency(s.value, s.currency, language).split('.')[1] || '00'}</span>
             </div>
@@ -86,12 +101,12 @@ export default function Overview({ onNavigate }: OverviewProps) {
                   dataKey="date" 
                   axisLine={false} 
                   tickLine={false} 
-                  tick={{ fontSize: 10, fill: '#94a3b8', fontWeight: 700 }}
+                  tick={{ fontSize: 10, fill: '#64748b', fontWeight: 700 }}
                 />
                 <Tooltip 
                   contentStyle={{ 
-                    backgroundColor: '#1e293b', 
-                    border: 'none', 
+                    backgroundColor: theme === 'dark' ? '#000' : '#1e293b', 
+                    border: theme === 'dark' ? '1px solid #1c1917' : 'none', 
                     borderRadius: '12px',
                     color: '#fff',
                     fontSize: '11px',
@@ -133,15 +148,58 @@ export default function Overview({ onNavigate }: OverviewProps) {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+        <Card title="Market Watch (Top Movers)">
+          <div className="space-y-1">
+            {data.stocks.length === 0 ? (
+               <p className="text-sm text-slate-400 italic py-8 text-center uppercase tracking-widest font-bold opacity-30">No active assets</p>
+            ) : (
+              [...data.stocks].sort((a, b) => {
+                const aP = ((a.currentPrice || a.avgBuyPrice) - a.avgBuyPrice) / a.avgBuyPrice;
+                const bP = ((b.currentPrice || b.avgBuyPrice) - b.avgBuyPrice) / b.avgBuyPrice;
+                return bP - aP;
+              }).slice(0, 4).map((s, i) => {
+                const current = s.currentPrice || s.avgBuyPrice;
+                const gain = current - s.avgBuyPrice;
+                const gainPerc = (gain / s.avgBuyPrice) * 100;
+                return (
+                  <div key={s.id} className="flex items-center justify-between p-3 rounded-xl hover:bg-slate-50 dark:hover:bg-stone-900 transition-colors cursor-pointer group">
+                    <div className="flex items-center gap-4">
+                      <div className="w-8 h-8 rounded-lg bg-slate-100 dark:bg-stone-800 flex items-center justify-center font-bold text-[10px] text-slate-500 group-hover:bg-blue-100 group-hover:text-blue-600 transition-colors">
+                        {s.symbol.slice(0, 2)}
+                      </div>
+                      <div>
+                        <p className="font-bold text-sm tabular-nums">{s.symbol}</p>
+                        <p className="text-[10px] font-medium text-slate-400">{formatCurrency(current, 'USD', language)}</p>
+                      </div>
+                    </div>
+                    <div className={cn(
+                      "px-2 py-1 rounded text-[10px] font-black min-w-[60px] text-center",
+                      gain >= 0 ? "bg-emerald-500/10 text-emerald-500" : "bg-red-500/10 text-red-500"
+                    )}>
+                      {gain >= 0 ? '+' : ''}{gainPerc.toFixed(2)}%
+                    </div>
+                  </div>
+                );
+              })
+            )}
+          </div>
+          <button 
+             onClick={() => onNavigate('stocks')}
+             className="w-full py-4 text-[10px] font-black text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 transition-colors uppercase tracking-[0.2em] border-t border-slate-50 dark:border-stone-900 mt-4"
+          >
+            Full Market View
+          </button>
+        </Card>
+
         <Card title="Upcoming Obligations">
           <div className="space-y-4">
             {data.reminders.length === 0 ? (
               <p className="text-sm text-slate-400 italic py-8 text-center uppercase tracking-widest font-bold opacity-30">All systems clear</p>
             ) : (
               data.reminders.map(r => (
-                <div key={r.id} className="flex items-center justify-between p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 group hover:border-blue-200 dark:hover:border-blue-900/30 transition-colors">
+                <div key={r.id} className="flex items-center justify-between p-4 rounded-2xl bg-white dark:bg-stone-900 border border-slate-100 dark:border-stone-800 group hover:border-blue-200 dark:hover:border-blue-900/30 transition-colors">
                   <div className="flex items-center gap-4">
-                    <div className="w-10 h-10 rounded-xl bg-slate-50 dark:bg-slate-800 flex items-center justify-center text-slate-400 group-hover:text-blue-500 transition-colors">
+                    <div className="w-10 h-10 rounded-xl bg-slate-50 dark:bg-stone-800 flex items-center justify-center text-slate-400 group-hover:text-blue-500 transition-colors">
                       <Plus className="w-5 h-5" />
                     </div>
                     <div>

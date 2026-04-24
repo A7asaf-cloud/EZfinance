@@ -14,14 +14,14 @@ export function Card({ children, className, title, delay = 0, ...props }: CardPr
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.4, delay }}
       className={cn(
-        "bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl overflow-hidden shadow-sm hover:shadow-md transition-shadow",
+        "bg-white dark:bg-black border border-slate-200 dark:border-stone-800 rounded-2xl overflow-hidden shadow-sm hover:shadow-md transition-shadow",
         className
       )}
       {...props}
     >
       {title && (
-        <div className="px-6 py-4 border-b border-slate-100 dark:border-slate-800 bg-slate-50/30 dark:bg-slate-900/30">
-          <h3 className="font-bold text-xs uppercase tracking-widest text-slate-400 dark:text-slate-500 italic">{title}</h3>
+        <div className="px-6 py-4 border-b border-slate-100 dark:border-stone-800 bg-slate-50/30 dark:bg-stone-900/30">
+          <h3 className="font-bold text-xs uppercase tracking-widest text-slate-400 dark:text-stone-500 italic">{title}</h3>
         </div>
       )}
       <div className="p-6">
@@ -45,8 +45,8 @@ export function Button({
 }: ButtonProps) {
   const variants = {
     primary: "bg-blue-600 text-white hover:bg-blue-700 shadow-sm",
-    secondary: "bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-slate-100 hover:bg-slate-50 dark:hover:bg-slate-700",
-    ghost: "bg-transparent text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-slate-100",
+    secondary: "bg-white dark:bg-black border border-slate-200 dark:border-stone-800 text-slate-900 dark:text-slate-100 hover:bg-slate-50 dark:hover:bg-stone-900 shadow-sm",
+    ghost: "bg-transparent text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-stone-900 hover:text-slate-900 dark:hover:text-slate-100",
     danger: "bg-red-500 text-white hover:bg-red-600",
   };
 

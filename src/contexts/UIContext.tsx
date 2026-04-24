@@ -27,12 +27,15 @@ export function UIProvider({ children }: { children: React.ReactNode }) {
   const dir: Dir = language === 'he' ? 'rtl' : 'ltr';
 
   useEffect(() => {
-    document.documentElement.classList.toggle('dark', theme === 'dark');
+    if (theme === 'dark') {
+      document.documentElement.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+    }
     document.documentElement.dir = dir;
     document.documentElement.lang = language;
     localStorage.setItem('theme', theme);
     localStorage.setItem('language', language);
-    localStorage.setItem('dir', dir);
   }, [theme, language, dir]);
 
   const toggleTheme = () => setTheme(prev => prev === 'light' ? 'dark' : 'light');
