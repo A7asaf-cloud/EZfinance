@@ -1,0 +1,12 @@
+{
+  "name": "EZfinance",
+  "description": "EZ & Professional personal finance dashboard for tracking cash, stocks, savings, and pensions with real-time cloud sync.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "Firebase Authentication",
+    "Real-time Cloud Sync",
+    "Personal Finance Tracking",
+    "Stock Portfolio",
+    "Savings & Pension Projection"
+  ]
+}

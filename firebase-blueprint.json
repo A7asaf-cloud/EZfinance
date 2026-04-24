@@ -1,0 +1,138 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "User Profile",
+      "description": "Global user balance and pension settings",
+      "type": "object",
+      "properties": {
+        "balance": { "type": "number" },
+        "pension": {
+          "type": "object",
+          "properties": {
+            "balance": { "type": "number" },
+            "monthlyContribution": { "type": "number" },
+            "retirementDate": { "type": "string", "format": "date-time" },
+            "expectedAnnualReturn": { "type": "number" }
+          }
+        },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      }
+    },
+    "Transaction": {
+      "title": "Transaction",
+      "description": "Cash flow transaction",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "date": { "type": "string", "format": "date-time" },
+        "amount": { "type": "number" },
+        "type": { "type": "string", "enum": ["income", "expense"] },
+        "category": { "type": "string" },
+        "description": { "type": "string" },
+        "account": { "type": "string" }
+      },
+      "required": ["userId", "date", "amount", "type", "category"]
+    },
+    "Stock": {
+      "title": "Stock",
+      "description": "Current stock holdings",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "symbol": { "type": "string" },
+        "name": { "type": "string" },
+        "shares": { "type": "number" },
+        "avgBuyPrice": { "type": "number" },
+        "currentPrice": { "type": "number" },
+        "buyDate": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "symbol", "shares", "avgBuyPrice"]
+    },
+    "StockTransaction": {
+      "title": "Stock Transaction",
+      "description": "Record of stock buy/sell actions",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "symbol": { "type": "string" },
+        "shares": { "type": "number" },
+        "price": { "type": "number" },
+        "date": { "type": "string", "format": "date-time" },
+        "type": { "type": "string", "enum": ["buy", "sell"] }
+      },
+      "required": ["userId", "symbol", "shares", "price", "date", "type"]
+    },
+    "SavingsGoal": {
+      "title": "Savings Goal",
+      "description": "A target to save for",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "name": { "type": "string" },
+        "targetAmount": { "type": "number" },
+        "currentAmount": { "type": "number" },
+        "deadline": { "type": "string", "format": "date-time" },
+        "color": { "type": "string" }
+      },
+      "required": ["userId", "name", "targetAmount", "currentAmount"]
+    },
+    "Reminder": {
+      "title": "Reminder",
+      "description": "Upcoming payment reminder",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "title": { "type": "string" },
+        "dueDate": { "type": "string", "format": "date-time" },
+        "amount": { "type": "number" },
+        "isPaid": { "type": "boolean" }
+      },
+      "required": ["userId", "title", "dueDate", "amount", "isPaid"]
+    },
+    "Recurring": {
+      "title": "Recurring Transaction",
+      "description": "Auto-applied transactions (salary, rent, etc)",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "amount": { "type": "number" },
+        "type": { "type": "string", "enum": ["income", "expense"] },
+        "category": { "type": "string" },
+        "description": { "type": "string" },
+        "dayOfMonth": { "type": "number" },
+        "lastApplied": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "amount", "type", "category", "dayOfMonth"]
+    }
+  },
+  "firestore": {
+    "users/{userId}": {
+      "schema": "UserProfile",
+      "description": "User specific settings and balance"
+    },
+    "transactions": {
+      "schema": "Transaction",
+      "description": "All cash transactions"
+    },
+    "stocks": {
+      "schema": "Stock",
+      "description": "Current stock holdings"
+    },
+    "stockTransactions": {
+      "schema": "StockTransaction",
+      "description": "Stock buy/sell history"
+    },
+    "savingsGoals": {
+      "schema": "SavingsGoal",
+      "description": "Savings goals"
+    },
+    "reminders": {
+      "schema": "Reminder",
+      "description": "Payment reminders"
+    },
+    "recurring": {
+      "schema": "Recurring",
+      "description": "Recurring transactions"
+    }
+  }
+}
